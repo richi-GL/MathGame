@@ -240,76 +240,131 @@ namespace math
             return value;
         }
 
+        struct TouchControlState
+        {
+            bool moveLeft = false;
+            bool moveRight = false;
+            bool moveUp = false;
+            bool moveDown = false;
+            bool lookActive = false;
+            Vector2 lookVector = { 0.0f, 0.0f };
+        };
+
+        void DrawArrowButton(const Rectangle& rect, const char* label, Color color)
+        {
+            DrawRectangleRec(rect, color);
+            DrawRectangleLinesEx(rect, 2, Fade(WHITE, 0.9f));
+            DrawText(label, static_cast<int>(rect.x + rect.width * 0.28f), static_cast<int>(rect.y + rect.height * 0.25f), 26, WHITE);
+        }
+
         void RenderTouchControls()
         {
             int screenW = GetScreenWidth();
             int screenH = GetScreenHeight();
 
-            Rectangle moveZone = { 0.0f, screenH * 0.45f, screenW * 0.35f, screenH * 0.55f };
-            Rectangle lookZone = { screenW * 0.65f, screenH * 0.45f, screenW * 0.35f, screenH * 0.55f };
+            const float padX = 48.0f;
+            const float padY = screenH - 180.0f;
+            const float buttonSize = 48.0f;
+            const float spacing = 12.0f;
 
-            DrawRectangleRec(moveZone, Fade(BLUE, 0.12f));
-            DrawRectangleRec(lookZone, Fade(RED, 0.10f));
-            DrawText("MOVER", static_cast<int>(moveZone.x + 22), static_cast<int>(moveZone.y + 16), 20, RAYWHITE);
-            DrawText("MIRAR", static_cast<int>(lookZone.x + 22), static_cast<int>(lookZone.y + 16), 20, RAYWHITE);
+            Rectangle leftButton = { padX, padY + buttonSize + spacing, buttonSize, buttonSize };
+            Rectangle rightButton = { padX + buttonSize + spacing, padY + buttonSize + spacing, buttonSize, buttonSize };
+            Rectangle upButton = { padX + buttonSize * 0.5f + spacing * 0.5f, padY, buttonSize, buttonSize };
+            Rectangle downButton = { padX + buttonSize * 0.5f + spacing * 0.5f, padY + (buttonSize + spacing) * 2.0f, buttonSize, buttonSize };
+
+            DrawArrowButton(leftButton, "←", Fade(WHITE, 0.18f));
+            DrawArrowButton(rightButton, "→", Fade(WHITE, 0.18f));
+            DrawArrowButton(upButton, "↑", Fade(WHITE, 0.18f));
+            DrawArrowButton(downButton, "↓", Fade(WHITE, 0.18f));
+
+            Vector2 joystickCenter = { static_cast<float>(screenW - 120.0f), static_cast<float>(screenH - 120.0f) };
+            float joystickRadius = 54.0f;
+            DrawCircleV(joystickCenter, joystickRadius + 10.0f, Fade(WHITE, 0.12f));
+            DrawCircleV(joystickCenter, joystickRadius, Fade(WHITE, 0.22f));
+            DrawCircleV(joystickCenter, 18.0f, Fade(DARKBLUE, 0.85f));
+        }
+
+        TouchControlState GetTouchControlState()
+        {
+            TouchControlState state;
+            int screenW = GetScreenWidth();
+            int screenH = GetScreenHeight();
+
+            const float padX = 48.0f;
+            const float padY = screenH - 180.0f;
+            const float buttonSize = 48.0f;
+            const float spacing = 12.0f;
+
+            Rectangle leftButton = { padX, padY + buttonSize + spacing, buttonSize, buttonSize };
+            Rectangle rightButton = { padX + buttonSize + spacing, padY + buttonSize + spacing, buttonSize, buttonSize };
+            Rectangle upButton = { padX + buttonSize * 0.5f + spacing * 0.5f, padY, buttonSize, buttonSize };
+            Rectangle downButton = { padX + buttonSize * 0.5f + spacing * 0.5f, padY + (buttonSize + spacing) * 2.0f, buttonSize, buttonSize };
+
+            Vector2 joystickCenter = { static_cast<float>(screenW - 120.0f), static_cast<float>(screenH - 120.0f) };
+            float joystickRadius = 54.0f;
+
+            for (int i = 0; i < GetTouchPointCount(); ++i)
+            {
+                Vector2 touchPos = GetTouchPosition(i);
+
+                if (IsPointInRect(touchPos, leftButton))
+                {
+                    state.moveLeft = true;
+                }
+                if (IsPointInRect(touchPos, rightButton))
+                {
+                    state.moveRight = true;
+                }
+                if (IsPointInRect(touchPos, upButton))
+                {
+                    state.moveUp = true;
+                }
+                if (IsPointInRect(touchPos, downButton))
+                {
+                    state.moveDown = true;
+                }
+
+                Vector2 joyDelta = { touchPos.x - joystickCenter.x, touchPos.y - joystickCenter.y };
+                float joyDistance = std::sqrt(joyDelta.x * joyDelta.x + joyDelta.y * joyDelta.y);
+                if (joyDistance <= joystickRadius + 12.0f)
+                {
+                    state.lookActive = true;
+                    state.lookVector.x = ClampValue(joyDelta.x / joystickRadius, -1.0f, 1.0f);
+                    state.lookVector.y = ClampValue(joyDelta.y / joystickRadius, -1.0f, 1.0f);
+                }
+            }
+
+            return state;
         }
 
         void HandleTouchCamera(Camera3D& camera)
         {
-            if (GetTouchPointCount() <= 0)
-            {
-                return;
-            }
+            TouchControlState input = GetTouchControlState();
 
-            static Vector2 lastTouchPos = { 0.0f, 0.0f };
-            static bool hasTouch = false;
-            static bool moveTouchZone = false;
-            static bool lookTouchZone = false;
+            Vector3 forward = NormalizeVector3(Vector3Subtract(camera.target, camera.position));
+            Vector3 right = NormalizeVector3(Vector3CrossProduct(forward, { 0.0f, 1.0f, 0.0f }));
 
-            Vector2 touchPos = GetTouchPosition(0);
-            int screenW = GetScreenWidth();
-            int screenH = GetScreenHeight();
+            float moveX = (input.moveRight ? 1.0f : 0.0f) - (input.moveLeft ? 1.0f : 0.0f);
+            float moveY = (input.moveUp ? 1.0f : 0.0f) - (input.moveDown ? 1.0f : 0.0f);
 
-            if (!hasTouch)
-            {
-                lastTouchPos = touchPos;
-                moveTouchZone = touchPos.x < screenW * 0.35f && touchPos.y > screenH * 0.45f;
-                lookTouchZone = touchPos.x > screenW * 0.65f && touchPos.y > screenH * 0.45f;
-                hasTouch = true;
-                return;
-            }
+            float moveFactor = GetFrameTime() * 7.5f;
+            camera.position = Vector3Add(camera.position, Vector3Scale(forward, -moveY * moveFactor));
+            camera.position = Vector3Add(camera.position, Vector3Scale(right, moveX * moveFactor));
+            camera.target = Vector3Add(camera.position, forward);
 
-            Vector2 delta = {
-                touchPos.x - lastTouchPos.x,
-                touchPos.y - lastTouchPos.y
-            };
-
-            if (moveTouchZone)
-            {
-                Vector3 forward = NormalizeVector3(Vector3Subtract(camera.target, camera.position));
-                Vector3 right = NormalizeVector3(Vector3CrossProduct(forward, { 0.0f, 1.0f, 0.0f }));
-
-                float moveFactor = GetFrameTime() * 7.5f;
-                camera.position = Vector3Add(camera.position, Vector3Scale(forward, -delta.y * 0.01f * moveFactor));
-                camera.position = Vector3Add(camera.position, Vector3Scale(right, delta.x * 0.01f * moveFactor));
-                camera.target = Vector3Add(camera.position, forward);
-            }
-
-            if (lookTouchZone)
+            if (input.lookActive)
             {
                 Vector3 direction = Vector3Subtract(camera.target, camera.position);
-                float yaw = -delta.x * 0.012f;
+                float yaw = -input.lookVector.x * 0.045f;
                 direction = RotateAroundY(direction, yaw);
 
-                float pitch = -delta.y * 0.009f;
                 float currentPitch = camera.target.y - camera.position.y;
+                float pitch = -input.lookVector.y * 0.035f;
                 float nextPitch = ClampValue(currentPitch + pitch, -1.0f, 1.5f);
 
                 camera.target = Vector3Add(camera.position, direction);
                 camera.target.y = camera.position.y + nextPitch;
             }
-
-            lastTouchPos = touchPos;
         }
 
         void ResetNotebookLayout(int* level, int width, int height)
@@ -439,8 +494,7 @@ namespace math
                 }
             }
 
-            const bool touchInputActive = GetTouchPointCount() > 0;
-            if (touchInputActive)
+            if (GetTouchPointCount() > 0)
             {
                 HandleTouchCamera(*state->camera);
             }
