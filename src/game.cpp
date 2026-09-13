@@ -240,6 +240,20 @@ namespace math
             return value;
         }
 
+        void RenderTouchControls()
+        {
+            int screenW = GetScreenWidth();
+            int screenH = GetScreenHeight();
+
+            Rectangle moveZone = { 0.0f, screenH * 0.45f, screenW * 0.35f, screenH * 0.55f };
+            Rectangle lookZone = { screenW * 0.65f, screenH * 0.45f, screenW * 0.35f, screenH * 0.55f };
+
+            DrawRectangleRec(moveZone, Fade(BLUE, 0.12f));
+            DrawRectangleRec(lookZone, Fade(RED, 0.10f));
+            DrawText("MOVER", static_cast<int>(moveZone.x + 22), static_cast<int>(moveZone.y + 16), 20, RAYWHITE);
+            DrawText("MIRAR", static_cast<int>(lookZone.x + 22), static_cast<int>(lookZone.y + 16), 20, RAYWHITE);
+        }
+
         void HandleTouchCamera(Camera3D& camera)
         {
             if (GetTouchPointCount() <= 0)
@@ -259,8 +273,8 @@ namespace math
             if (!hasTouch)
             {
                 lastTouchPos = touchPos;
-                moveTouchZone = touchPos.x < screenW * 0.5f;
-                lookTouchZone = !moveTouchZone;
+                moveTouchZone = touchPos.x < screenW * 0.35f && touchPos.y > screenH * 0.45f;
+                lookTouchZone = touchPos.x > screenW * 0.65f && touchPos.y > screenH * 0.45f;
                 hasTouch = true;
                 return;
             }
@@ -497,6 +511,8 @@ namespace math
 
                 state->map->Draw(*state->camera);
             EndMode3D();
+
+            RenderTouchControls();
 
             if (state->mathChallengeActive)
             {
