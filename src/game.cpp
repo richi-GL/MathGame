@@ -610,9 +610,30 @@ namespace math
                     std::string prompt = "Respuesta: " + state->answerInput;
                     DrawText(prompt.c_str(), screenW / 2 - MeasureText(prompt.c_str(), 22) / 2, screenH / 2 + 40, 22, WHITE);
 
+                    for (int digit = 0; digit <= 9; ++digit)
+                    {
+                        int col = digit % 3;
+                        int row = digit / 3;
+                        float buttonW = 58.0f;
+                        float buttonH = 48.0f;
+                        float startX = screenW / 2.0f - 120.0f + col * 70.0f;
+                        float startY = screenH / 2.0f + 80.0f + row * 60.0f;
+                        Rectangle button = { startX, startY, buttonW, buttonH };
+                        DrawRectangleRec(button, Fade(WHITE, 0.18f));
+                        DrawText(std::to_string(digit).c_str(), startX + 20.0f, startY + 10.0f, 24, WHITE);
+                    }
+
+                    Rectangle deleteButton = { screenW / 2.0f - 120.0f, screenH / 2.0f + 260.0f, 110.0f, 48.0f };
+                    Rectangle enterButton = { screenW / 2.0f + 10.0f, screenH / 2.0f + 260.0f, 110.0f, 48.0f };
+                    DrawRectangleRec(deleteButton, Fade(ORANGE, 0.75f));
+                    DrawRectangleRec(enterButton, Fade(GREEN, 0.75f));
+                    DrawText("Borrar", deleteButton.x + 20.0f, deleteButton.y + 12.0f, 22, BLACK);
+                    DrawText("OK", enterButton.x + 40.0f, enterButton.y + 12.0f, 22, BLACK);
+
                     if (GetTouchPointCount() > 0)
                     {
                         Vector2 touchPos = GetTouchPosition(0);
+
                         for (int digit = 0; digit <= 9; ++digit)
                         {
                             int col = digit % 3;
@@ -635,9 +656,6 @@ namespace math
                                 }
                             }
                         }
-
-                        Rectangle deleteButton = { screenW / 2.0f - 120.0f, screenH / 2.0f + 260.0f, 110.0f, 48.0f };
-                        Rectangle enterButton = { screenW / 2.0f + 10.0f, screenH / 2.0f + 260.0f, 110.0f, 48.0f };
 
                         if (IsPointInRect(touchPos, deleteButton) && !state->answerInput.empty())
                         {
