@@ -1,5 +1,6 @@
 #include "game.h"
 #include <raylib.h>
+#include <raymath.h>
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -197,6 +198,106 @@ namespace math
             return false;
         }
 
+        bool IsPointInRect(const Vector2& point, const Rectangle& rect)
+        {
+            return point.x >= rect.x && point.x <= rect.x + rect.width &&
+                   point.y >= rect.y && point.y <= rect.y + rect.height;
+        }
+
+        Vector3 NormalizeVector3(const Vector3& value)
+        {
+            float length = std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+            if (length <= 0.0001f)
+            {
+                return { 0.0f, 0.0f, 0.0f };
+            }
+
+            return { value.x / length, value.y / length, value.z / length };
+        }
+
+        Vector3 RotateAroundY(const Vector3& value, float angle)
+        {
+            float cosine = std::cos(angle);
+            float sine = std::sin(angle);
+            return {
+                value.x * cosine + value.z * sine,
+                value.y,
+                -value.x * sine + value.z * cosine
+            };
+        }
+
+        template <typename T>
+        T ClampValue(const T& value, const T& minValue, const T& maxValue)
+        {
+            if (value < minValue)
+            {
+                return minValue;
+            }
+            if (value > maxValue)
+            {
+                return maxValue;
+            }
+            return value;
+        }
+
+        void HandleTouchCamera(Camera3D& camera)
+        {
+            if (GetTouchPointCount() <= 0)
+            {
+                return;
+            }
+
+            static Vector2 lastTouchPos = { 0.0f, 0.0f };
+            static bool hasTouch = false;
+            static bool moveTouchZone = false;
+            static bool lookTouchZone = false;
+
+            Vector2 touchPos = GetTouchPosition(0);
+            int screenW = GetScreenWidth();
+            int screenH = GetScreenHeight();
+
+            if (!hasTouch)
+            {
+                lastTouchPos = touchPos;
+                moveTouchZone = touchPos.x < screenW * 0.5f;
+                lookTouchZone = !moveTouchZone;
+                hasTouch = true;
+                return;
+            }
+
+            Vector2 delta = {
+                touchPos.x - lastTouchPos.x,
+                touchPos.y - lastTouchPos.y
+            };
+
+            if (moveTouchZone)
+            {
+                Vector3 forward = NormalizeVector3(Vector3Subtract(camera.target, camera.position));
+                Vector3 right = NormalizeVector3(Vector3CrossProduct(forward, { 0.0f, 1.0f, 0.0f }));
+
+                float moveFactor = GetFrameTime() * 7.5f;
+                camera.position = Vector3Add(camera.position, Vector3Scale(forward, -delta.y * 0.01f * moveFactor));
+                camera.position = Vector3Add(camera.position, Vector3Scale(right, delta.x * 0.01f * moveFactor));
+                camera.target = Vector3Add(camera.position, forward);
+            }
+
+            if (lookTouchZone)
+            {
+                Vector3 direction = Vector3Subtract(camera.target, camera.position);
+                float yaw = -delta.x * 0.012f;
+                direction = RotateAroundY(direction, yaw);
+
+                float pitch = -delta.y * 0.009f;
+                float currentPitch = camera.target.y - camera.position.y;
+                float nextPitch = ClampValue(currentPitch + pitch, -1.0f, 1.5f);
+
+                camera.target = Vector3Add(camera.position, direction);
+                camera.target.y = camera.position.y + nextPitch;
+            }
+
+            lastTouchPos = touchPos;
+        }
+
         void ResetNotebookLayout(int* level, int width, int height)
         {
             for (int y = 0; y < height; ++y)
@@ -324,6 +425,12 @@ namespace math
                 }
             }
 
+            const bool touchInputActive = GetTouchPointCount() > 0;
+            if (touchInputActive)
+            {
+                HandleTouchCamera(*state->camera);
+            }
+
             if (!state->mathChallengeActive && !state->gameWon && state->mistakeTimer <= 0.0f)
             {
                 float nearestDistance = 9999.0f;
@@ -372,12 +479,9 @@ namespace math
                 }
                 else
                 {
-                    Vector3 previous = state->camera->position;
-                    UpdateCamera(state->camera, CAMERA_FIRST_PERSON);
-                    if (IsWallCollision(state->level, 16, 12, 6.0f, state->camera->position))
-                    {
-                        state->camera->position = previous;
-                    }
+                    // Touch controls are the only active camera input in this game.
+                    // The keyboard/mouse path has been intentionally removed to match
+                    // the requirement of replacing classic input with mobile touch controls.
                 }
             }
 
@@ -407,13 +511,24 @@ namespace math
                     DrawText(title.c_str(), screenW / 2 - MeasureText(title.c_str(), 26) / 2, screenH / 2 - 80, 26, WHITE);
 
                     DrawWrappedTextEveryNWords(state->activeChallenge.explanation, screenW / 2 - 220, screenH / 2 - 20, 20, RAYWHITE, 5);
-                    DrawText("Pulsa ENTER para continuar.", screenW / 2 - 150, screenH / 2 + 70, 20, WHITE);
 
-                    if (IsKeyPressed(KEY_ENTER))
+                    Rectangle continueButton = { screenW / 2.0f - 140.0f, screenH / 2.0f + 60.0f, 280.0f, 50.0f };
+                    DrawRectangleRec(continueButton, SKYBLUE);
+                    DrawText("Continuar", screenW / 2 - MeasureText("Continuar", 22) / 2, screenH / 2 + 72, 22, BLACK);
+
+                    if (GetTouchPointCount() > 0)
                     {
-                        state->introShown[static_cast<int>(state->activeChallenge.type)] = true;
-                        state->challengeIntroVisible = false;
-                        state->answerInput.clear();
+                        Vector2 touchPos = GetTouchPosition(0);
+                        if (IsPointInRect(touchPos, continueButton))
+                        {
+                            state->introShown[static_cast<int>(state->activeChallenge.type)] = true;
+                            state->challengeIntroVisible = false;
+                            state->answerInput.clear();
+                            while (GetTouchPointCount() > 0)
+                            {
+                                GetTouchPosition(0);
+                            }
+                        }
                     }
                 }
                 else
@@ -425,58 +540,79 @@ namespace math
                     std::string prompt = "Respuesta: " + state->answerInput;
                     DrawText(prompt.c_str(), screenW / 2 - MeasureText(prompt.c_str(), 22) / 2, screenH / 2 + 40, 22, WHITE);
 
-                    int key = GetKeyPressed();
-                    if (key >= KEY_ZERO && key <= KEY_NINE)
+                    if (GetTouchPointCount() > 0)
                     {
-                        int value = key - KEY_ZERO;
-                        if (state->answerInput.size() < 6)
+                        Vector2 touchPos = GetTouchPosition(0);
+                        for (int digit = 0; digit <= 9; ++digit)
                         {
-                            state->answerInput += std::to_string(value);
-                        }
-                    }
-                    else if (IsKeyPressed(KEY_BACKSPACE) && !state->answerInput.empty())
-                    {
-                        state->answerInput.pop_back();
-                    }
-                    else if (IsKeyPressed(KEY_ENTER))
-                    {
-                        int answer = 0;
-                        if (!state->answerInput.empty())
-                        {
-                            answer = std::stoi(state->answerInput);
+                            int col = digit % 3;
+                            int row = digit / 3;
+                            float buttonW = 58.0f;
+                            float buttonH = 48.0f;
+                            float startX = screenW / 2.0f - 120.0f + col * 70.0f;
+                            float startY = screenH / 2.0f + 80.0f + row * 60.0f;
+                            Rectangle button = { startX, startY, buttonW, buttonH };
+
+                            if (IsPointInRect(touchPos, button))
+                            {
+                                if (state->answerInput.size() < 6)
+                                {
+                                    state->answerInput += std::to_string(digit);
+                                }
+                                while (GetTouchPointCount() > 0)
+                                {
+                                    GetTouchPosition(0);
+                                }
+                            }
                         }
 
-                        if (answer == state->activeChallenge.expected)
+                        Rectangle deleteButton = { screenW / 2.0f - 120.0f, screenH / 2.0f + 260.0f, 110.0f, 48.0f };
+                        Rectangle enterButton = { screenW / 2.0f + 10.0f, screenH / 2.0f + 260.0f, 110.0f, 48.0f };
+
+                        if (IsPointInRect(touchPos, deleteButton) && !state->answerInput.empty())
                         {
-                            if (state->solvedChallengeCount + 1 >= static_cast<int>(state->challengeOrder.size()))
+                            state->answerInput.pop_back();
+                        }
+                        else if (IsPointInRect(touchPos, enterButton))
+                        {
+                            int answer = 0;
+                            if (!state->answerInput.empty())
                             {
-                                state->level[state->currentNotebookY * 16 + state->currentNotebookX] = 0;
-                                state->solvedChallengeCount++;
-                                state->mathChallengeActive = false;
-                                state->answerInput.clear();
-                                state->currentNotebookX = -1;
-                                state->currentNotebookY = -1;
-                                state->gameWon = true;
+                                answer = std::stoi(state->answerInput);
+                            }
+
+                            if (answer == state->activeChallenge.expected)
+                            {
+                                if (state->solvedChallengeCount + 1 >= static_cast<int>(state->challengeOrder.size()))
+                                {
+                                    state->level[state->currentNotebookY * 16 + state->currentNotebookX] = 0;
+                                    state->solvedChallengeCount++;
+                                    state->mathChallengeActive = false;
+                                    state->answerInput.clear();
+                                    state->currentNotebookX = -1;
+                                    state->currentNotebookY = -1;
+                                    state->gameWon = true;
+                                }
+                                else
+                                {
+                                    state->level[state->currentNotebookY * 16 + state->currentNotebookX] = 0;
+                                    state->solvedChallengeCount++;
+                                    state->mathChallengeActive = false;
+                                    state->answerInput.clear();
+                                    state->currentNotebookX = -1;
+                                    state->currentNotebookY = -1;
+                                }
                             }
                             else
                             {
-                                state->level[state->currentNotebookY * 16 + state->currentNotebookX] = 0;
-                                state->solvedChallengeCount++;
+                                state->mistakeTimer = 2.0f;
                                 state->mathChallengeActive = false;
+                                state->challengeIntroVisible = false;
                                 state->answerInput.clear();
                                 state->currentNotebookX = -1;
                                 state->currentNotebookY = -1;
+                                DrawText("Te equivocaste!", screenW / 2 - MeasureText("Te equivocaste!", 30) / 2, screenH / 2 + 120, 30, RED);
                             }
-                        }
-                        else
-                        {
-                            state->mistakeTimer = 2.0f;
-                            state->mathChallengeActive = false;
-                            state->challengeIntroVisible = false;
-                            state->answerInput.clear();
-                            state->currentNotebookX = -1;
-                            state->currentNotebookY = -1;
-                            DrawText("Te equivocaste!", screenW / 2 - MeasureText("Te equivocaste!", 30) / 2, screenH / 2 + 120, 30, RED);
                         }
                     }
                 }
